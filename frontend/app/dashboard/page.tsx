@@ -1,0 +1,285 @@
+'use client';
+
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiService } from '@/services/api';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/useToast';
+import {
+  Users,
+  MessageSquare,
+  Bot,
+  Zap,
+  RefreshCw,
+  QrCode,
+  CheckCircle2,
+  AlertCircle
+} from 'lucide-react';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend
+} from 'recharts';
+
+export default function DashboardOverview() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  // Fetch Stats
+  const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useQuery({
+    queryKey: ['stats'],
+    queryFn: apiService.getStats,
+  });
+
+  // Fetch connection status
+  const { data: conn, isLoading: connLoading, refetch: refetchConn } = useQuery({
+    queryKey: ['whatsappStatus'],
+    queryFn: apiService.getConnectionStatus,
+  });
+
+  // Connect WhatsApp Mutation
+  const connectMutation = useMutation({
+    mutationFn: apiService.connectWhatsApp,
+    onSuccess: (data) => {
+      toast(data.message || 'WhatsApp connection process started.', 'info');
+      queryClient.invalidateQueries({ queryKey: ['whatsappStatus'] });
+    },
+    onError: (err: any) => {
+      toast(err.message || 'Failed to start WhatsApp connection.', 'error');
+    }
+  });
+
+  // Disconnect WhatsApp Mutation
+  const disconnectMutation = useMutation({
+    mutationFn: apiService.disconnectWhatsApp,
+    onSuccess: (data) => {
+      toast(data.message || 'WhatsApp session logged out.', 'info');
+      queryClient.invalidateQueries({ queryKey: ['whatsappStatus'] });
+    },
+    onError: (err: any) => {
+      toast(err.message || 'Failed to terminate WhatsApp session.', 'error');
+    }
+  });
+
+  const handleRefreshAll = () => {
+    refetchStats();
+    refetchConn();
+    toast('Refreshing dashboard analytics...', 'success');
+  };
+
+  const isConnected = conn?.status === 'connected';
+
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+      {/* Header Panel */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Overview Dashboard</h1>
+          <p className="text-muted-foreground mt-1">Real-time statistics and automated AI replies analytics</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="flex items-center gap-2 cursor-pointer"
+          onClick={handleRefreshAll}
+          disabled={statsLoading || connLoading}
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${statsLoading || connLoading ? 'animate-spin' : ''}`} />
+          Refresh Stats
+        </Button>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="bg-card/45 border border-border/50">
+          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+            <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Total Contacts</CardTitle>
+            <Users className="w-4 h-4 text-emerald-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-extrabold">{statsLoading ? '...' : stats?.cards?.totalContacts || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">Synchronized from WhatsApp interactions</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card/45 border border-border/50">
+          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+            <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Messages Logged</CardTitle>
+            <MessageSquare className="w-4 h-4 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-extrabold">{statsLoading ? '...' : stats?.cards?.totalMessages || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">Direct and automated message log count</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card/45 border border-border/50">
+          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+            <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">AI Replied</CardTitle>
+            <Bot className="w-4 h-4 text-purple-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-extrabold">{statsLoading ? '...' : stats?.cards?.aiReplies || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">Automated replies generated by GPT</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card/45 border border-border/50">
+          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+            <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Active Auto-Replies</CardTitle>
+            <Zap className="w-4 h-4 text-amber-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-extrabold">{statsLoading ? '...' : stats?.cards?.activeChats || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">Contacts currently configured for AI auto-reply</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Main Analytics Graph */}
+        <Card className="lg:col-span-2 bg-card/45 border border-border/50 flex flex-col justify-between">
+          <CardHeader>
+            <CardTitle>Activity Logs (Last 7 Days)</CardTitle>
+            <CardDescription>Visual comparison of total client messages versus AI automated responses</CardDescription>
+          </CardHeader>
+          <CardContent className="h-[300px]">
+            {statsLoading ? (
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+              </div>
+            ) : stats?.chartData?.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={stats.chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorMessages" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorReplies" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.2} />
+                  <XAxis dataKey="date" stroke="#9ca3af" fontSize={11} />
+                  <YAxis stroke="#9ca3af" fontSize={11} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#1f2937',
+                      borderColor: '#374151',
+                      borderRadius: '0.375rem',
+                      color: '#f3f4f6'
+                    }}
+                  />
+                  <Legend verticalAlign="top" height={36} iconType="circle" />
+                  <Area name="Total Messages" type="monotone" dataKey="messages" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorMessages)" />
+                  <Area name="AI Auto Replies" type="monotone" dataKey="replies" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorReplies)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
+                No activity logged in the last 7 days. Link your WhatsApp to start tracking.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* WhatsApp Connection Control widget */}
+        <Card className="bg-card/45 border border-border/50 flex flex-col justify-between">
+          <CardHeader>
+            <CardTitle>WhatsApp Session Link</CardTitle>
+            <CardDescription>Setup and monitor your device pairing credentials</CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+            {connLoading ? (
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-8 h-8 border-3 border-primary border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-xs text-muted-foreground">Resolving connection status...</p>
+              </div>
+            ) : conn?.status === 'qr' && conn.qr ? (
+              <div className="space-y-4 animate-in fade-in duration-300">
+                <div className="p-4 bg-white rounded-lg inline-block shadow-lg mx-auto">
+                  {/* Render base64 QR Image */}
+                  <img src={conn.qr} alt="WhatsApp QR Code" className="w-44 h-44" />
+                </div>
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p className="font-semibold text-foreground">Scan QR code using WhatsApp</p>
+                  <p>Open WhatsApp &gt; Menu &gt; Linked Devices &gt; Link Device</p>
+                </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="w-full cursor-pointer"
+                  onClick={() => disconnectMutation.mutate()}
+                  isLoading={disconnectMutation.isPending}
+                >
+                  Cancel Connect
+                </Button>
+              </div>
+            ) : isConnected ? (
+              <div className="space-y-4 animate-in fade-in duration-300">
+                <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-2">
+                  <CheckCircle2 className="w-8 h-8" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-foreground">Active Connection</h4>
+                  <p className="text-xs text-muted-foreground mt-1">Connected as phone: <span className="font-mono text-emerald-400 font-semibold">+{conn.phone}</span></p>
+                </div>
+                <p className="text-xs text-muted-foreground px-4">AI Assistant is active. It will reply to incoming Malayalam, Manglish, and English queries automatically.</p>
+                
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="w-full cursor-pointer"
+                  onClick={() => disconnectMutation.mutate()}
+                  isLoading={disconnectMutation.isPending}
+                >
+                  Disconnect Session
+                </Button>
+              </div>
+            ) : conn?.status === 'connecting' ? (
+              <div className="space-y-4 py-6">
+                <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Acquiring Session Socket...</p>
+                  <p className="text-xs text-muted-foreground mt-1">Please wait while the server initiates the link protocol.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4 py-4 animate-in fade-in duration-300">
+                <div className="w-16 h-16 bg-muted border border-border text-muted-foreground rounded-full flex items-center justify-center mx-auto mb-2">
+                  <AlertCircle className="w-8 h-8" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-foreground">Disconnected</h4>
+                  <p className="text-xs text-muted-foreground mt-1">No active WhatsApp session linked to this account.</p>
+                </div>
+                <Button
+                  variant="primary"
+                  className="w-full flex items-center justify-center gap-1.5 cursor-pointer"
+                  onClick={() => connectMutation.mutate()}
+                  isLoading={connectMutation.isPending}
+                >
+                  <QrCode className="w-4 h-4" />
+                  Connect WhatsApp
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
