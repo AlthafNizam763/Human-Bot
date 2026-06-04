@@ -11,6 +11,7 @@ import {
 import { handleGetSettings, handleUpdateSettings } from '../controllers/settings.js';
 import { handleGetLogs } from '../controllers/logs.js';
 import { handleGetStats } from '../controllers/stats.js';
+import { handleGetBotStatus, handleUpdateBotStatus } from '../controllers/status.js';
 
 const router = Router();
 
@@ -36,6 +37,10 @@ router.delete('/personalities/:id', handleDeletePersonality);
 // Settings routing
 router.get('/settings', handleGetSettings);
 router.put('/settings', handleUpdateSettings);
+
+// Bot Status routing
+router.get('/bot-status', handleGetBotStatus);
+router.put('/bot-status', handleUpdateBotStatus);
 
 // Logs routing
 router.get('/logs', handleGetLogs);

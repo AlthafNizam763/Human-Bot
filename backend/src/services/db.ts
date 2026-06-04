@@ -228,3 +228,49 @@ export async function writeLog(userId: string, level: 'info' | 'warn' | 'error',
   });
   console.log(`[LOG - ${level.toUpperCase()}] ${message}`, metadata ? JSON.stringify(metadata) : '');
 }
+
+export interface BotStatus {
+  currentStatus: 'office' | 'home' | 'meeting' | 'driving' | 'gym' | 'outside' | 'travel' | 'sleeping' | 'busy' | 'available';
+  customStatus: string;
+  busyMode: boolean;
+  lastUpdated: admin.firestore.Timestamp;
+}
+
+/**
+ * Fetch the bot's status configuration (or create with defaults)
+ */
+export async function getBotStatus(userId: string): Promise<BotStatus> {
+  const docRef = db.collection('settings').doc(`${userId}_botStatus`);
+  const doc = await docRef.get();
+  
+  if (!doc.exists) {
+    const defaultStatus: BotStatus = {
+      currentStatus: 'available',
+      customStatus: '',
+      busyMode: false,
+      lastUpdated: admin.firestore.Timestamp.now()
+    };
+    await docRef.set(defaultStatus);
+    return defaultStatus;
+  }
+  
+  const data = doc.data()!;
+  return {
+    currentStatus: data.currentStatus || 'available',
+    customStatus: data.customStatus || '',
+    busyMode: data.busyMode ?? false,
+    lastUpdated: data.lastUpdated || admin.firestore.Timestamp.now()
+  } as BotStatus;
+}
+
+/**
+ * Update the bot's status configurations
+ */
+export async function updateBotStatus(userId: string, data: Partial<BotStatus>): Promise<void> {
+  const docRef = db.collection('settings').doc(`${userId}_botStatus`);
+  await docRef.set({
+    ...data,
+    lastUpdated: admin.firestore.Timestamp.now()
+  }, { merge: true });
+}
+

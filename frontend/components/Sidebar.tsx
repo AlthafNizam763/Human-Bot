@@ -9,7 +9,8 @@ import {
   Smile,
   Terminal,
   Settings,
-  Bot
+  Bot,
+  Activity
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -24,6 +25,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
     { name: 'Contacts', href: '/dashboard/contacts', icon: Users },
     { name: 'Conversations', href: '/dashboard/conversations', icon: MessageSquare },
     { name: 'Personalities', href: '/dashboard/personalities', icon: Smile },
+    { name: 'Live Status', href: '/dashboard/status', icon: Activity },
     { name: 'System Logs', href: '/dashboard/logs', icon: Terminal },
     { name: 'Settings', href: '/dashboard/settings', icon: Settings },
   ];

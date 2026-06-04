@@ -20,10 +20,11 @@ service cloud.firestore {
     
     // Settings Collection rules
     match /settings/{settingId} {
-      // Matches both settings and connection docs
+      // Matches settings, connection, and bot status docs
       allow read, write: if isAuthenticated() && (
         settingId == request.auth.uid || 
-        settingId == request.auth.uid + "_connection"
+        settingId == request.auth.uid + "_connection" ||
+        settingId == request.auth.uid + "_botStatus"
       );
     }
     

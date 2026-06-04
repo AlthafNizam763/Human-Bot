@@ -81,6 +81,13 @@ export const apiService = {
     body: JSON.stringify(data),
   }),
 
+  // Bot Status
+  getBotStatus: () => fetchApi<any>('/bot-status'),
+  updateBotStatus: (data: any) => fetchApi<any>('/bot-status', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
+
   // Logs
   getLogs: () => fetchApi<any[]>('/logs'),
 

@@ -1,7 +1,7 @@
 import { WASocket, proto, downloadMediaMessage, delay } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import { db } from '../config/firebase.js';
-import { getSettings, getOrCreateContact, updateContact, addMessage, getRecentMessages, writeLog, getPersonalityById } from '../services/db.js';
+import { getSettings, getOrCreateContact, updateContact, addMessage, getRecentMessages, writeLog, getPersonalityById, getBotStatus } from '../services/db.js';
 import { generateAIResponse, transcribeVoiceNote, isSafetyViolation } from '../services/openai.js';
 import { connectToWhatsApp, disconnectWhatsApp } from '../services/whatsapp.js';
 
@@ -188,20 +188,24 @@ export async function handleIncomingMessage(
       // 1. Send typing indicator
       await sock.sendPresenceUpdate('composing', remoteJid);
 
-      // 2. Fetch conversation history for GPT context
-      const history = await getRecentMessages(userId, remoteJid, settings.memoryLength);
+      // 2. Fetch conversation history for GPT context (Load last 50 messages)
+      const history = await getRecentMessages(userId, remoteJid, 50);
 
       // 3. Resolve personality prompt
       const personality = await getPersonalityById(userId, contact.personalityId);
       const personalityPrompt = personality ? personality.prompt : 'Be a friendly assistant.';
 
-      // 4. Generate response
+      // 4. Load latest bot status dynamically
+      const botStatus = await getBotStatus(userId);
+
+      // 5. Generate response
       const aiReply = await generateAIResponse(
         textContent,
         history,
         contact.name,
         personalityPrompt,
         settings,
+        botStatus,
         imageBase64
       );
 

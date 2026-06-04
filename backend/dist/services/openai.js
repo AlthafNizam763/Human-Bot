@@ -10,16 +10,27 @@ const openai_1 = require("openai");
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const env_js_1 = require("../config/env.js");
-let openaiClient = null;
+const clientsMap = new Map();
 function getOpenAIClient(apiKeyOverride) {
     const apiKey = apiKeyOverride || env_js_1.CONFIG.OPENAI_API_KEY;
     if (!apiKey) {
         throw new Error('OpenAI API Key is missing. Please configure it in your Settings.');
     }
-    if (!openaiClient || (apiKeyOverride && openaiClient.apiKey !== apiKeyOverride)) {
-        openaiClient = new openai_1.OpenAI({ apiKey });
+    let cleanApiKey = apiKey.trim();
+    if (cleanApiKey.startsWith('OPENAI_API_KEY=')) {
+        cleanApiKey = cleanApiKey.split('OPENAI_API_KEY=')[1].trim();
     }
-    return openaiClient;
+    if (clientsMap.has(cleanApiKey)) {
+        return clientsMap.get(cleanApiKey);
+    }
+    const isGemini = cleanApiKey.startsWith('AIzaSy') || cleanApiKey.startsWith('AQ.');
+    const options = { apiKey: cleanApiKey };
+    if (isGemini) {
+        options.baseURL = "https://generativelanguage.googleapis.com/v1beta/openai/";
+    }
+    const client = new openai_1.OpenAI(options);
+    clientsMap.set(cleanApiKey, client);
+    return client;
 }
 /**
  * Checks if a message contains sensitive financial/OTP contents that should be filtered.
@@ -47,7 +58,51 @@ function isSafetyViolation(text) {
  * Transcribe a WhatsApp audio voice note using OpenAI Whisper
  */
 async function transcribeVoiceNote(audioBuffer, mimeType, apiKeyOverride) {
-    const client = getOpenAIClient(apiKeyOverride);
+    const apiKey = apiKeyOverride || env_js_1.CONFIG.OPENAI_API_KEY;
+    let cleanApiKey = apiKey.trim();
+    if (cleanApiKey.startsWith('OPENAI_API_KEY=')) {
+        cleanApiKey = cleanApiKey.split('OPENAI_API_KEY=')[1].trim();
+    }
+    const isGemini = cleanApiKey.startsWith('AIzaSy') || cleanApiKey.startsWith('AQ.');
+    if (isGemini) {
+        // Call Gemini API directly for transcription since Whisper is unsupported on OpenAI endpoint
+        try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${cleanApiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{
+                            parts: [
+                                {
+                                    inlineData: {
+                                        mimeType: mimeType === 'audio/ogg' || mimeType.includes('opus') ? 'audio/ogg' : mimeType,
+                                        data: audioBuffer.toString('base64')
+                                    }
+                                },
+                                {
+                                    text: "Transcribe this audio file into text. If it is in Malayalam or Manglish, transcribe it accordingly in the language spoken. Output only the transcription, nothing else."
+                                }
+                            ]
+                        }]
+                })
+            });
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Gemini transcription API error: ${response.statusText}. Details: ${errorText}`);
+            }
+            const result = await response.json();
+            const transcriptionText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!transcriptionText) {
+                throw new Error('Gemini returned an empty transcription response');
+            }
+            return transcriptionText.trim();
+        }
+        catch (err) {
+            console.error('Gemini transcription failed:', err);
+            throw err;
+        }
+    }
+    const client = getOpenAIClient(cleanApiKey);
     // Create a temporary file because OpenAI API requires a file stream
     const tempDir = path_1.default.join(process.cwd(), 'temp');
     if (!fs_1.default.existsSync(tempDir)) {
@@ -88,19 +143,42 @@ async function transcribeVoiceNote(audioBuffer, mimeType, apiKeyOverride) {
  * Generate an AI response for a message thread
  */
 async function generateAIResponse(messageBody, history, contactName, personalityPrompt, settings, imageBufferBase64) {
-    const client = getOpenAIClient(settings.openaiApiKey);
+    const apiKey = settings.openaiApiKey || env_js_1.CONFIG.OPENAI_API_KEY;
+    let cleanApiKey = apiKey.trim();
+    if (cleanApiKey.startsWith('OPENAI_API_KEY=')) {
+        cleanApiKey = cleanApiKey.split('OPENAI_API_KEY=')[1].trim();
+    }
+    const isGemini = cleanApiKey.startsWith('AIzaSy') || cleanApiKey.startsWith('AQ.');
+    const client = getOpenAIClient(cleanApiKey);
+    const now = new Date();
+    const timeContext = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const dayContext = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
     const systemPrompt = `
-You are the personal WhatsApp AI Assistant acting as the account owner in their chat.
-Follow these strict rules:
-1. **Never reveal you are an AI or an automated system**. You are the owner of this WhatsApp account.
-2. Reply naturally, in a casual, conversational WhatsApp text messaging style.
-3. Keep replies relative to the length setting: ${settings.replyLength}.
-4. You must understand and communicate in: **Malayalam, Manglish (Malayalam in English script like "evideyaa", "enthayi", "sughamaano"), and English**.
-5. **CRITICAL: Detect and reply in the same language and script that the sender is using**. If they use Manglish, reply in Manglish. If they use Malayalam script, reply in Malayalam script. If they use English, reply in English.
-6. Match the emotional tone of the sender (e.g. friendly, professional, happy, sad, angry).
-7. Match the personality requested for this chat:
+You are the personal WhatsApp AI Assistant representing the account owner in a chat with their contact named "${contactName}".
+Current Time: ${timeContext} (${dayContext}).
+
+CRITICAL IDENTITY RULES:
+1. **Never reveal you are an AI, bot, or assistant**. Speak as the owner of this WhatsApp account. If asked "are you a bot?" or similar, reply with a casual laugh/denial (e.g., "poda, njan aaraa ninnu thonnunne? 😂" or "no way, entha katha").
+2. Match the requested personality profile:
 "${personalityPrompt}"
-8. Keep replies concise, human-like, and formatting friendly (use casual punctuation, lowercase when natural, and optional emojis). Avoid perfect essay formats. Use abbreviations when appropriate (like "tc", "gm", "poda", "enth").
+3. **DO NOT prepend your response with "Me:", "[Me]:", "[Owner]:", or your name**. Output ONLY the raw chat bubble message itself.
+
+TRILINGUAL CHAT PROTOCOLS (Malayalam, Manglish, English):
+1. **Script & Language Matching**: Reply in the EXACT same language and script (Malayalam script vs Latin/Manglish script vs English) that "${contactName}" is using.
+2. **Colloquial Manglish Rules**:
+   - Spelled phonetically: Use "sugam", "evda", "enthayi", "da", "shery", "potte", "poda", "mone", "machane", "sathyam", "njn" (for njan), "nee", "nna", "enth", "nokkam", "ind" (for und), "ila" (for illa).
+   - Avoid textbook spellings like "sughamaano" or "evideya". Keep it relaxed and phonetic, exactly like standard Kerala youth chats.
+3. **Colloquial Malayalam Rules**:
+   - Use natural local slang (e.g. "എന്താടാ", "സുഖം തന്നേ", "ശരി", "പിന്നെ കാണാം").
+
+HUMAN-LIKE TYPING & FORMATTING:
+1. **Short & Punchy**: Keralites write short WhatsApp text bubbles. Avoid long paragraphs. Keep it to 1-3 sentences max.
+2. **Natural Casing & Punctuation**:
+   - Use lowercase letters mostly (in Manglish or English).
+   - **DO NOT** put periods (.) at the end of your message. It looks cold and robotic. Use commas, spaces, or emojis instead.
+   - Use casual punctuation like "..." or "!!" occasionally.
+3. **Emoji Control**: Limit emojis to 0, 1, or 2 max. Do not spam them.
+4. **Abbreviations**: Use standard shortcuts: "ok", "k", "gm", "gn", "tc", "lol".
 `;
     const messages = [
         { role: 'system', content: systemPrompt }
@@ -109,16 +187,17 @@ Follow these strict rules:
     // Filter history to fit within memoryLength limit
     const recentHistory = history.slice(-settings.memoryLength);
     recentHistory.forEach(msg => {
+        const sender = msg.fromMe ? 'Me' : contactName;
         messages.push({
             role: msg.fromMe ? 'assistant' : 'user',
-            content: msg.body
+            content: `[${sender}]: ${msg.body}`
         });
     });
     // Prepare current user message
     let currentUserContent = messageBody;
     if (imageBufferBase64) {
         currentUserContent = [
-            { type: 'text', text: messageBody || "Describe this image and reply contextually." },
+            { type: 'text', text: `[${contactName}]: ${messageBody || "Describe this image and reply contextually."}` },
             {
                 type: 'image_url',
                 image_url: {
@@ -127,15 +206,29 @@ Follow these strict rules:
             }
         ];
     }
+    else {
+        currentUserContent = `[${contactName}]: ${messageBody}`;
+    }
     messages.push({
         role: 'user',
         content: currentUserContent
     });
+    let model = settings.openaiModel || 'gpt-4o-mini';
+    if (isGemini) {
+        model = model.startsWith('gpt-4o-mini') ? 'gemini-2.5-flash' : 'gemini-2.5-pro';
+    }
     const response = await client.chat.completions.create({
-        model: settings.openaiModel || 'gpt-4o-mini',
+        model: model,
         messages: messages,
         max_tokens: settings.replyLength === 'short' ? 60 : settings.replyLength === 'medium' ? 150 : 350,
-        temperature: 0.8
+        temperature: 0.85
     });
-    return response.choices[0]?.message?.content || "";
+    const aiReply = response.choices[0]?.message?.content || "";
+    // Clean reply from formatting tags if the LLM accidentally included them
+    let cleanReply = aiReply.trim();
+    cleanReply = cleanReply.replace(/^\[?Me\]?:\s*/i, '');
+    cleanReply = cleanReply.replace(/^\[?Owner\]?:\s*/i, '');
+    cleanReply = cleanReply.replace(/^\[?Assistant\]?:\s*/i, '');
+    cleanReply = cleanReply.replace(/^\[?System\]?:\s*/i, '');
+    return cleanReply;
 }
