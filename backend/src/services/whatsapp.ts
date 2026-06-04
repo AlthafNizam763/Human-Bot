@@ -3,7 +3,9 @@ import makeWASocket, {
   useMultiFileAuthState,
   WASocket,
   proto,
-  delay
+  delay,
+  Browsers,
+  fetchLatestBaileysVersion
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
@@ -74,11 +76,17 @@ export async function connectToWhatsApp(userId: string): Promise<WASocket> {
 
   const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
 
+  // Fetch the latest WhatsApp Web version to avoid 405 Method Not Allowed error
+  const { version } = await fetchLatestBaileysVersion().catch(() => ({
+    version: [2, 3000, 1035194821] as [number, number, number]
+  }));
+
   const sock = makeWASocket({
+    version,
     auth: state,
     printQRInTerminal: false, // Don't flood terminal since SaaS dashboard reads QR
     logger: pino({ level: 'silent' }), // Disable Baileys verbose logger
-    browser: ['WhatsApp AI Assistant', 'Chrome', '1.0.0'],
+    browser: Browsers.macOS('Desktop'),
     syncFullHistory: false
   });
 

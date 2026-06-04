@@ -94,11 +94,16 @@ async function connectToWhatsApp(userId) {
     await updateConnectionState(userId, 'connecting');
     await (0, db_js_1.writeLog)(userId, 'info', 'Initializing WhatsApp connection state...');
     const { state, saveCreds } = await (0, baileys_1.useMultiFileAuthState)(sessionPath);
+    // Fetch the latest WhatsApp Web version to avoid 405 Method Not Allowed error
+    const { version } = await (0, baileys_1.fetchLatestBaileysVersion)().catch(() => ({
+        version: [2, 3000, 1035194821]
+    }));
     const sock = (0, baileys_1.default)({
+        version,
         auth: state,
         printQRInTerminal: false, // Don't flood terminal since SaaS dashboard reads QR
         logger: (0, pino_1.default)({ level: 'silent' }), // Disable Baileys verbose logger
-        browser: ['WhatsApp AI Assistant', 'Chrome', '1.0.0'],
+        browser: baileys_1.Browsers.macOS('Desktop'),
         syncFullHistory: false
     });
     activeSockets.set(userId, sock);
