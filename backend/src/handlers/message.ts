@@ -206,7 +206,8 @@ export async function handleIncomingMessage(
         personalityPrompt,
         settings,
         botStatus,
-        imageBase64
+        imageBase64,
+        contact
       );
 
       if (!aiReply) {
